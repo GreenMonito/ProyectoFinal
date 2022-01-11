@@ -1,0 +1,144 @@
+version: '3.7'
+
+services:
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/monkey/configs/portainer:/data 
+    restart: always
+    ports: 
+      - 9000:9000
+    networks:
+      - general
+################################################################################################
+  pihole:
+    container_name: pihole
+    image: pihole/pihole:latest
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "67:67/udp"
+      - "80:80/tcp"
+      - "443:443/tcp"
+    environment:
+      TZ: 'Europe/Madrid'
+      WEBPASSWORD: 'password'
+      DNSMASQ_LISTENING: all
+      DNS1: "1.1.1.1"
+      DNS2: "1.0.0.1"
+    volumes:
+      - /home/monkey/configs/pihole/config:/etc/pihole/
+      - /home/monkey/configs/pihole/dnsmasq:/etc/dnsmasq.d/
+    dns:
+      - 127.0.0.1
+      - 1.1.1.1
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+    networks:
+      pihole:
+        ipv4_address: 172.28.1.2
+################################################################################################
+  wireguard:
+    image: linuxserver/wireguard
+    container_name: wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+      - SERVERURL=wireguard.mrmonkey.xyz
+      - SERVERPORT=51820
+      - PEERS=1 
+      - PEERDNS=10.13.13.1 
+      - INTERNAL_SUBNET=10.13.13.0 
+    volumes:
+      - /home/monkey/configs/wireguard/Config:/config
+      - /lib/modules:/lib/modules
+    ports:
+      - 51820:51820/udp
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+    dns:
+      - 172.28.1.2
+    networks:
+      pihole:
+        ipv4_address: 172.28.1.3      
+      general:
+################################################################################################
+  node_exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    container_name: node_exporter
+    command:
+      - '--path.rootfs=/host'
+    network_mode: host
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - /:/host:ro,rslave 
+################################################################################################      
+  cadvisor:
+    image: zcube/cadvisor:latest
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    command:
+    - '-housekeeping_interval=30s'
+    - '-max_housekeeping_interval=35s'
+    - '-event_storage_event_limit=default=0'
+    - '-event_storage_age_limit=default=0'
+    - '-store_container_labels=false'
+    - '-global_housekeeping_interval=30s'
+    - '-event_storage_event_limit=default=0'
+    - '-event_storage_age_limit=default=0'
+    - '-disable_metrics=percpu,process,sched,tcp,udp,diskIO,disk'      # enable only cpu, memory, network
+    - '-docker_only'       
+    - '-allow_dynamic_housekeeping=true'
+    - '-storage_duration=1m0s'
+    ports:
+      - 8088:8080
+    networks:
+      - general
+################################################################################################      
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    ports:
+      - 9090:9090
+    volumes:
+      - /home/monkey/configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped 
+    networks:
+      - general
+################################################################################################
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    user: 1000:1000
+    ports:
+      - 3000:3000
+    volumes:
+    - /home/monkey/configs/grafana/data:/var/lib/grafana
+    restart: unless-stopped
+###############################################################################################        
+networks:
+  pihole:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.1.0/24
+  general:
+ 
